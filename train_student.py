@@ -267,13 +267,13 @@ if __name__ == "__main__":
                        help="Batch size for training. Default: 32")
     
     # Dataset paths
-    parser.add_argument("--train_images_dir", type=str, default="./vggface/train", 
+    parser.add_argument("--train_images_dir", type=str, default="./dataset1/train", 
                        help="Path to training images directory")
-    parser.add_argument("--train_targets_dir", type=str, default="./vggface/train_blur", 
+    parser.add_argument("--train_targets_dir", type=str, default="./dataset1/train_blur", 
                        help="Path to training targets (blurred) directory")
-    parser.add_argument("--val_images_dir", type=str, default="./vggface/val", 
+    parser.add_argument("--val_images_dir", type=str, default="./dataset1/val", 
                        help="Path to validation images directory")
-    parser.add_argument("--val_targets_dir", type=str, default="./vggface/val_blur", 
+    parser.add_argument("--val_targets_dir", type=str, default="./dataset1/val_blur", 
                        help="Path to validation targets (blurred) directory")
 
     parser.add_argument("--max_train_images", type=int, default=9600, 
@@ -292,9 +292,10 @@ if __name__ == "__main__":
                        help="Name for the best model checkpoint")
     parser.add_argument("--final_model_name", type=str, default="student_final.keras", 
                        help="Name for the final model")
-    parser.add_argument("--csv_log_name", type=str, default="training_log.csv", 
+    parser.add_argument("--csv_log_name", type=str, default="student_log.csv", 
                        help="Name for the CSV training log file")
 
     args = parser.parse_args()
     main(args)
+
 
