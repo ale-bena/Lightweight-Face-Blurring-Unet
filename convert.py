@@ -5,7 +5,7 @@ from PIL import Image
 import os
 
 def representative_dataset_generator(images_folder, input_size, max_images=200):
-    """Generate representative dataset for quantization calibration"""
+    # representative dataset generation
     images = sorted([f for f in os.listdir(images_folder) 
                     if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
     
@@ -24,17 +24,14 @@ def representative_dataset_generator(images_folder, input_size, max_images=200):
             print(f"Error processing {file_name}: {e}")
 
 def convert_to_fp32_tflite(keras_model_path, output_path):
-    """Convert Keras model to FP32 TFLite"""
+    # keras --> fp32 tflite
     print(f"Converting {keras_model_path} to FP32 TFLite...")
-    
-    # Load Keras model
+
     model = tf.keras.models.load_model(keras_model_path, compile=False)
-    
-    # Convert to TFLite
+
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     tflite_model = converter.convert()
-    
-    # Save
+
     with open(output_path, "wb") as f:
         f.write(tflite_model)
     
@@ -42,25 +39,23 @@ def convert_to_fp32_tflite(keras_model_path, output_path):
 
 def convert_to_quantized_tflite(keras_model_path, output_path, quant_type, 
                                calibration_images_folder, input_size, max_calibration_images):
-    """Convert Keras model to quantized TFLite (INT8 or UINT8)"""
+    #keras --> quantized int8 or uint8
     print(f"Converting {keras_model_path} to {quant_type.upper()} TFLite...")
-    
-    # Load Keras model
+
     model = tf.keras.models.load_model(keras_model_path, compile=False)
     
-    # Create representative dataset
+    # create representative dataset
     def representative_dataset():
         return representative_dataset_generator(
             calibration_images_folder, input_size, max_calibration_images
         )
     
-    # Convert to TFLite with quantization
+    # convert to TFLite with quantization
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     converter.representative_dataset = representative_dataset
     converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
     
-    # Set input/output types based on quantization type
     if quant_type.lower() == 'int8':
         converter.inference_input_type = tf.int8
         converter.inference_output_type = tf.int8
@@ -72,41 +67,32 @@ def convert_to_quantized_tflite(keras_model_path, output_path, quant_type,
     
     tflite_model = converter.convert()
     
-    # Save
     with open(output_path, "wb") as f:
         f.write(tflite_model)
     
     print(f"{quant_type.upper()} TFLite model saved at: {output_path}")
 
 def get_model_size_mb(model_path):
-    """Get model size in MB"""
     size_bytes = os.path.getsize(model_path)
     size_mb = size_bytes / (1024 * 1024)
     return size_mb
 
 def main(args):
-    """Main conversion function"""
-    # Validate input model exists
     if not os.path.exists(args.model_path):
         raise FileNotFoundError(f"Model file not found: {args.model_path}")
     
-    # Create output directory if it doesn't exist
     os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
     
-    # Get original model size
     original_size = get_model_size_mb(args.model_path)
     print(f"Original Keras model size: {original_size:.2f} MB")
     
     if args.quant_type.lower() == 'fp32':
-        # Convert to FP32 TFLite
         convert_to_fp32_tflite(args.model_path, args.output_path)
         
     elif args.quant_type.lower() in ['int8', 'uint8']:
-        # Validate calibration images folder
         if not os.path.exists(args.calibration_images):
             raise FileNotFoundError(f"Calibration images folder not found: {args.calibration_images}")
         
-        # Convert to quantized TFLite
         convert_to_quantized_tflite(
             args.model_path, 
             args.output_path, 
@@ -119,7 +105,6 @@ def main(args):
     else:
         raise ValueError(f"Unsupported quantization type: {args.quant_type}")
     
-    # Get converted model size
     converted_size = get_model_size_mb(args.output_path)
     compression_ratio = original_size / converted_size
     
@@ -149,3 +134,4 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     main(args)
+
