@@ -119,12 +119,12 @@ For the students model training the training file is train_student.py and it con
 
 The teacher is set as non-trainable and the loss functions for training and validation are still based on MSE, but the total loss is a weighted combination between the loss of the student and the loss between the student and the teacher outputs. The parameter alpha can be tuned to increase or decrease the impact of the teacher. In this case alpha is set to 0,7, so the teacher impact is 0,3.
 
-### QUANTIZATION
+### Quantization
 Quantization is a model compression technique that aims to reduce the memory footprint and computational requirements of neural networks. It operates by representing the model parameters and activations with a lower numerical precision, typically passing from 32 bit floating point (FP32) to 16 bit or 8 bit integer (INT8) formats. This reduction comes at the cost of potential degradation in model accuracy depending on the quantization method and the model's sensitivity to these changes. 
 For this project post training quantization is used(convert.py), since the aim of the project is not to maximize the performance but to understand the memory footprint and possible performance of the models. Quantization aware training was considered, but a problem with conflicting libraries has been encountered and so the idea has been dropped.
 
 
-### RESULTING MODELS
+### Final models
 
 | Model        | Type             | Size (KB) |
 |--------------|-----------------|-----------|
