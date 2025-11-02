@@ -3,7 +3,7 @@ import argparse
 import tensorflow as tf
 from tensorflow.keras.saving import register_keras_serializable
 from model_teacher import build_blur_unet as build_teacher 
-from model_studentv1 import build_blur_unet as build_student
+from model_student_v1 import build_blur_unet as build_student
 from tensorflow.keras.callbacks import TensorBoard
 import datetime
 
@@ -297,5 +297,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(args)
+
 
 
