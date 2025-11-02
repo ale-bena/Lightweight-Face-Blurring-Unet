@@ -3,7 +3,7 @@ import argparse
 import tensorflow as tf
 from tensorflow.keras.saving import register_keras_serializable
 from model_teacher import build_blur_unet as build_teacher 
-from model_student import build_blur_unet as build_student
+from model_studentv1 import build_blur_unet as build_student
 from tensorflow.keras.callbacks import TensorBoard
 import datetime
 
@@ -21,7 +21,7 @@ def psnr_metric(y_true, y_pred):
 
 def process_path(img_path, tgt_path, img_size):
     img = tf.io.read_file(img_path)
-    img = tf.image.decode_jpeg(img, channels=3)
+    img = tf.image.decode_jpeg(img, channels=3) # needs changing if png format is used
     img = tf.image.resize(img, img_size)
     img = tf.cast(img, tf.float32) / 255.0
 
@@ -32,8 +32,8 @@ def process_path(img_path, tgt_path, img_size):
 
     return img, tgt
 
-def load_dataset(image_dir, target_dir, img_size, batch_size, max_images=None):
-    image_files = sorted([os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.endswith(".jpg")])
+def load_dataset(image_dir, target_dir, img_size, batch_size, max_images=None, cache_path=None):
+    image_files = sorted([os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.endswith(".jpg")]) # needs changing if png format is used
     target_files = sorted([os.path.join(target_dir, f) for f in os.listdir(target_dir) if f.endswith(".jpg")])
 
     if max_images is not None:
@@ -49,37 +49,39 @@ def load_dataset(image_dir, target_dir, img_size, batch_size, max_images=None):
         num_parallel_calls=AUTOTUNE,
         deterministic=True
     )
+    if cache_path:
+        print(f"Caching dataset to {cache_path}")
+        dataset = dataset.cache(cache_path)
+    else:
+        print("Caching dataset in memory")
+        dataset = dataset.cache()
     dataset = dataset.batch(batch_size).prefetch(AUTOTUNE)
     return dataset
 
 @register_keras_serializable()
-class Distiller(tf.keras.Model):
-    def __init__(self, student, teacher, alpha=0.7, beta=0.3, **kwargs):
-        super(Distiller, self).__init__(**kwargs)
+class Distiller(tf.keras.Model): 
+    def __init__(self, student, teacher, alpha=0.7, **kwargs):
+        super().__init__(**kwargs)
         self.teacher = teacher
         self.student = student
         self.alpha = alpha
-        self.beta = beta
     
     def get_config(self):
         config = super().get_config()
         config.update({
-            "alpha": self.alpha,
-            "beta": self.beta,
-            "student": self.student,
-            "teacher": self.teacher,
+            "alpha": self.alpha
         })
         return config
 
-    def compile(self, optimizer, metrics):
-        super().compile(optimizer=optimizer, metrics=metrics)
-        self.optimizer = optimizer
+    def compile(self, optimizer, metrics=None, **kwargs):
+        super().compile(optimizer=optimizer, metrics=metrics, **kwargs)
 
     def train_step(self, data):
         x, y_true = data
 
         # Teacher inference --> not updated)
-        y_teacher = self.teacher(x, training=False)
+        # y_teacher = self.teacher(x, training=False)
+        y_teacher = tf.stop_gradient(self.teacher(x, training=False))
 
         with tf.GradientTape() as tape:
             y_student = self.student(x, training=True)
@@ -90,13 +92,13 @@ class Distiller(tf.keras.Model):
             # Loss 2: student vs teacher
             loss_distill = tf.reduce_mean(tf.square(y_teacher - y_student))
 
-            # Loss total = weighted combination
-            loss = self.alpha * loss_gt + self.beta * loss_distill
+            # Loss total --> weighted combination
+            loss = self.alpha * loss_gt + (1.0 - self.alpha) * loss_distill
 
         grads = tape.gradient(loss, self.student.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.student.trainable_variables))
 
-        # Update metrics (respect to ground-truth)
+        # update metrics (respect to ground-truth)
         for metric in self.metrics:
             metric.update_state(y_true, y_student)
 
@@ -108,12 +110,13 @@ class Distiller(tf.keras.Model):
 
     def test_step(self, data):
         x, y_true = data
-        y_teacher = self.teacher(x, training=False)
+        y_teacher = tf.stop_gradient(self.teacher(x, training=False))
+        # y_teacher = self.teacher(x, training=False)
         y_student = self.student(x, training=False)
 
         loss_gt = tf.reduce_mean(tf.square(y_true - y_student))
         loss_distill = tf.reduce_mean(tf.square(y_teacher - y_student))
-        loss = self.alpha * loss_gt + self.beta * loss_distill
+        loss = self.alpha * loss_gt + (1.0 - self.alpha) * loss_distill
 
         for metric in self.metrics:
             metric.update_state(y_true, y_student)
@@ -139,19 +142,21 @@ def train_model(teacher_model_path, epochs, img_size, batch_size, alpha, beta,
         print("Building new Student model...")
         student = build_student(input_shape=(*img_size, 3))
 
-    distiller = Distiller(student=student, teacher=teacher, alpha=alpha, beta=beta)
+    distiller = Distiller(student=student, teacher=teacher, alpha=alpha)
     distiller.compile(
         optimizer=tf.keras.optimizers.Adam(),
         metrics=['mae', ssim_metric, psnr_metric]
     )
 
     print("Loading datasets...")
-    train_dataset = load_dataset(train_images_dir, train_targets_dir, img_size, batch_size, max_train_images)
-    val_dataset = load_dataset(val_images_dir, val_targets_dir, img_size, batch_size, max_val_images)
+    train_dataset = load_dataset(train_images_dir, train_targets_dir, img_size, batch_size,
+                                 max_images=max_train_images,
+                                 cache_path="/content/train_cache.tfdata")
 
-    steps_per_epoch = max_train_images // batch_size
-    validation_steps = max_val_images // batch_size
-
+    validation_dataset = load_dataset(val_images_dir, val_targets_dir, img_size, batch_size,
+                                      max_images=max_val_images,
+                                      cache_path="/content/val_cache.tfdata")
+    
     os.makedirs(output_dir, exist_ok=True)
     best_model_path = os.path.join(output_dir, best_model_name)
     final_model_path = os.path.join(output_dir, final_model_name)
@@ -164,11 +169,12 @@ def train_model(teacher_model_path, epochs, img_size, batch_size, alpha, beta,
     tensorboard_cb = tf.keras.callbacks.TensorBoard(
         log_dir=log_dir,
         histogram_freq=0,
-        write_graph=True,     
+        write_graph=False,     
         write_images=False,  
         update_freq='epoch'
     )
-                    
+
+    # Callbacks
     checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
         best_model_path, save_best_only=True, monitor="val_loss", mode="min"
     )
@@ -183,10 +189,8 @@ def train_model(teacher_model_path, epochs, img_size, batch_size, alpha, beta,
     print("Starting Student training...")
     history = distiller.fit(
         train_dataset,
-        validation_data=val_dataset,
+        validation_data=validation_dataset,
         epochs=epochs,
-        steps_per_epoch=steps_per_epoch,
-        validation_steps=validation_steps,
         callbacks=[checkpoint_cb, earlystop_cb, reduce_lr_cb, csv_logger, tensorboard_cb]
     )
     best_epoch = history.history['val_loss'].index(min(history.history['val_loss'])) + 1
@@ -198,6 +202,7 @@ def train_model(teacher_model_path, epochs, img_size, batch_size, alpha, beta,
     else:
         print("Training completed.")
     student.save(final_model_path)
+    # student.save_weights(os.path.join(output_dir, "studentv1.weights.h5"))
     print(f"Student model saved to {final_model_path}")
     print(f"Best model saved to {best_model_path}")
     print(f"Training log saved to {csv_log_path}")
@@ -205,6 +210,7 @@ def train_model(teacher_model_path, epochs, img_size, batch_size, alpha, beta,
 def main(args):
     print(f"Training student with teacher at: {args.teacher_model_path}")
 
+    # Gpu growth conviguration, works in Colab, not guaranteed to work in other scenarios
     if args.gpu_growth:
         gpus = tf.config.list_physical_devices('GPU')
         if gpus:
@@ -245,8 +251,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Training Student Model with Knowledge Distillation")
     
-    # Model and training parameters
-    parser.add_argument("--teacher_model_path", type=str, default="models_vgg/best_modelcsvlrf.keras", 
+    parser.add_argument("--teacher_model_path", type=str, default="models_teacher/teacher.keras", 
                        help="Path to pretrained teacher model")
     parser.add_argument("--epochs", type=int, required=True, help="Number of training epochs")
     parser.add_argument("--resume_training", action="store_true", 
@@ -254,13 +259,8 @@ if __name__ == "__main__":
     parser.add_argument("--student_path", type=str, default=None, 
                        help="Path to student model to resume training")
     
-    # Distillation parameters
     parser.add_argument("--alpha", type=float, default=0.7, 
                        help="Weight for ground-truth loss (default: 0.7)")
-    parser.add_argument("--beta", type=float, default=0.3, 
-                       help="Weight for distillation loss (default: 0.3)")
-    
-    # Data parameters
     parser.add_argument("--img_size", type=int, nargs=2, default=[128, 128], 
                        help="Input image size (height width). Default: 128 128")
     parser.add_argument("--batch_size", type=int, default=32, 
@@ -275,11 +275,10 @@ if __name__ == "__main__":
                        help="Path to validation images directory")
     parser.add_argument("--val_targets_dir", type=str, default="./vggface/val_blur", 
                        help="Path to validation targets (blurred) directory")
-    
-    # Dataset size limits
-    parser.add_argument("--max_train_images", type=int, default=8000, 
+
+    parser.add_argument("--max_train_images", type=int, default=9600, 
                        help="Maximum number of training images to use")
-    parser.add_argument("--max_val_images", type=int, default=2000, 
+    parser.add_argument("--max_val_images", type=int, default=2400, 
                        help="Maximum number of validation images to use")
     
     # GPU configuration
@@ -298,6 +297,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(args)
-
-
 
