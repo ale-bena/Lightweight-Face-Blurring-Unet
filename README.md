@@ -1,4 +1,4 @@
-<h1 align="center">Face Blurring Unet Thesis</h1>
+<h1 align="center">Lightweight Face Blurring Unet</h1>
   
 ## Table of contents
 - [Introduction](#introduction)
@@ -10,8 +10,8 @@
 - [Conclusion and Future Work](#conclusion-and-future-work)
 
 # Introduction
-This repository contains the code and the information from a thesis work about face blurring.
-The goal is to develop a working face blurring model using a pipeline approach, based on an encoder-decoder architecture, specifically an U-Net. To do that hardware limitation of embedded devices have to be considered, so the aim is to develop a model with a final size of more or less 1MB and verify the inference time on a board using a board simulator to see wheter it can be fitted on a TinyML device or not and the expected performance. The dataset of images is restricted to contain only medium/large size faces to allow the model to perform better on this type of inputs.
+This repository contains the code and documentation for a face blurring pipeline based on an encoder-decoder architecture, specifically a U-Net.
+To do that hardware limitation of embedded devices have to be considered, and the aim is to develop a model with a final size of more or less 1MB and verify the inference time on a board using a board simulator to see wheter it can be fitted on a TinyML device or not and the expected performance. The dataset of images is restricted to contain only medium/large size faces to allow the model to perform better on this type of inputs.
 
 # Dataset structure
 The training dataset is composed of four different folders and is organized in two different types of folders: training and validation. The total number of images of the dataset is 12000 and they are then divided 80% for training(9600), and 20% for validation. The images are in .jpg format.
@@ -44,7 +44,7 @@ To produce the structure above the images have been divided into train and val f
 - [Mediapipe](https://mediapipe.readthedocs.io/en/latest/solutions/face_detection.html) official implementation
 
 Both implementation seem to perform weel but they still miss some faces, especially on images where the face is too big, when it is only half face or when there are multiple faces and some of them are small or low resolution.
-That said the mediapipe implementation has been chosen for the first dataset version, dataset1, since it is an official implementation. It has been combined with a Gaussianblur() function with a fixed kernel of 41 to blur the bounding box region..
+That said the mediapipe implementation has been chosen for the first dataset version, dataset1, since it is an official implementation. It has been combined with a Gaussianblur() function with a fixed kernel of 41 to blur the bounding box region.
 After taking a closer look to the results, there were some missed faces, so the decision was to realize a second version of the dataset, by running the blazeface detector over the blurred images from the mediapipe one, and then clean up the validation folder by hand to be sure that it is perfect since this impacts directly the metrics. Then all the folders have been padded with black padding to the input size of the model, 128x128, to avoid stretched images during training, since the file uses a resize function without padding. The second version contains a different blurring function, while the first one had a fixed kernel of 41 for the gaussian blur, this last has a variable kernel based on the dimensions of the detected bounding box. This allows to avoid the problem noticeable in the following image, where bigger faces gets a lower level of anonymization.
 
 <p align="center">
